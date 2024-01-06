@@ -1,5 +1,5 @@
 use tokio;
-use web_scraping_2::WebScrap;
+use web_scraping_2::web_scrap::{self, Quote};
 
 fn main() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -8,7 +8,10 @@ fn main() {
     
     if let Ok(s) = runtime {
         ..=s.block_on(async{
-            WebScrap::scrape_quote().await
+            let quotes = web_scrap::scrape_quote().await;
+            for quote in quotes{
+                println!("{}\n", quote);
+            }
         });
     }
 }
