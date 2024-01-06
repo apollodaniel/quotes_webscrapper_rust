@@ -1,43 +1,80 @@
 
 pub mod web_scrap{
     use reqwest;
-    use select;
-    const WEBSITE_URL_BASE: &str = "https://quotes.toscrape.com/";
-
-    pub async fn get_website_body() -> Result<String, reqwest::Error>{
-        let response = reqwest::get(WEBSITE_URL_BASE).await?;
+    use select::{self, predicate::Class};
+    
+    pub async fn get_website_body(url: &str) -> Result<String, reqwest::Error>{
+        let response = reqwest::get(url).await?;
         let body = response.bytes().await?;
 
         let body = String::from_utf8(body.to_vec()).expect("error converting body");
         Ok(body)
     }
     pub async fn scrape_quote() -> Vec<Quote>{
-        let website_body = get_website_body().await.expect("Error getting website body");
-        let document = select::document::Document::from(website_body.as_str());
-        let quotes: Vec<_> = document.find(select::predicate::Class("quote")).collect();
-        
+        let website_url_base: &str = "https://quotes.toscrape.com/";
+        let mut website_url: String = website_url_base.to_string();
         let mut quote_list: Vec<Quote> = Vec::new();
+        println!("Loading quotes page 1");
+        loop {
+            let website_body = get_website_body(website_url.as_str()).await.expect("Error getting website body");
 
-        for quote in quotes{
-            let content: Vec<_> = quote.find(select::predicate::Class("text")).collect();
-            let content = content.first();
+            // next button class = next
+
+            let document = select::document::Document::from(website_body.as_str());
+            let next_button: Vec<_> = document.find(Class("next")).collect();
+
+            let mut new_link: Option<String> = None;
+
+            // get new button link
+            if let Some(next_btn) = next_button.first() {
+                let next_button_child: Vec<_> = next_btn.children().collect();
+                let mut button = None;
+                for child in next_button_child.iter(){
+                    if let Some(name) = child.name()  {
+                        if name=="a"{
+                            button = Some(child);
+                        }
+                    }
+                }
+                if let Some(btn) =  button{
+                    let href = btn.attr("href").unwrap();
+                    new_link = Some(href.to_string());
+                    let splitted_href: Vec<_> = href.split("/").collect();
+                    println!("Loading quotes page {}", splitted_href[2]);
+                }
+            }
+
+
+            let quotes: Vec<_> = document.find(select::predicate::Class("quote")).collect();
             
-            let mut content_string: String = String::new();
-            if let Some(ref _content) = content {
-                content_string = _content.text();
+            
+
+            for quote in quotes{
+                let content: Vec<_> = quote.find(select::predicate::Class("text")).collect();
+                let content = content.first();
+                
+                let mut content_string: String = String::new();
+                if let Some(ref _content) = content {
+                    content_string = _content.text();
+                }
+
+                let author: Vec<_> = quote.find(select::predicate::Class("author")).collect();
+                let author = author.first();
+
+                let mut author_string: String = String::new();
+                if let Some(_author) = author {
+                    author_string = _author.text();
+                }
+
+                quote_list.push(
+                    Quote { content: content_string.trim().to_string(), author: author_string.trim().to_string() }
+                );
             }
-
-            let author: Vec<_> = quote.find(select::predicate::Class("author")).collect();
-            let author = author.first();
-
-            let mut author_string: String = String::new();
-            if let Some(_author) = author {
-                author_string = _author.text();
+            if let Some(url) = new_link{
+                website_url = format!("{}{}",website_url_base,url);
+            }else{
+                break;
             }
-
-            quote_list.push(
-                Quote { content: content_string.trim().to_string(), author: author_string.trim().to_string() }
-            );
         }
         return quote_list;
     }
